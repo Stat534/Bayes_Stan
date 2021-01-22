@@ -1,0 +1,173 @@
+---
+title: "More Bayesian Inference and STAN"
+output: pdf_document
+---
+
+\renewcommand{\vec}[1]{\mathbf{#1}}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 4, fig.width = 6, messages = F, warnings = F)
+
+library(tidyverse) 
+library(gridExtra)
+library(arm)
+library(rstanarm)
+library(rstan)
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+
+## Key Concepts
+
+- Visual Overview of Bayesian Inference
+- Writing Stan Code
+
+\vfill
+
+### Visual Overview of Bayesian Inference
+
+Using some Bridger Bowl weather data we will provide a visual overview of Bayesian Inference. *The goal will be to model the average winter high temperature at the base of Bridger Bowl.*
+
+1. Prior Specification
+
+\vfill
+- First sketch a prior distribution that encapsulates your belief about what you believe the average high temperature would be. *Note this should obey law of total probability*
+
+\vfill
+
+- *Next we generally need to parameterize (perhaps approximately) this belief with some sort of probability distribution.*
+
+\vfill
+
+```{r}
+temp_seq <- -10:50
+prob_seq <- dnorm(temp_seq, mean = 20, sd = 10)
+tibble(temp = temp_seq, prob = prob_seq) %>% ggplot(aes(temp, prob)) + geom_line() + theme_bw() +
+  ggtitle("Andy's Prior Belief: N(20, 10^2)")
+```
+
+\newpage
+
+*Formally, my prior is on the mean high temp, which we will denote $\mu$.*
+
+$$\mu \sim N(20, 10^2)$$
+
+\vfill
+
+2. Specify the sampling distribution for the data or perhaps in more familiar language, state the likelihood for the statistical model
+
+\vfill
+
+- *We will assume that the temperature readings are continuous (or "nearly continuous")*
+
+\vfill
+
+- *It seems reasonable to start with a normal distribution, so:*
+$$X|\mu, \sigma^2 \sim N(\mu, \sigma^2)$$
+
+\vfill
+
+- Note that we also need to estimate $\sigma$ in this model and need a prior for that parameter too.
+
+\vfill
+
+- Grab some weather data from Bridger Bowl (roughly the first half of January 2021)
+```{r}
+temp <- c(26, 45, 44, 36, 22, 25, 31, 31, 37, 34, 35, 37,32, 31)
+```
+
+\vfill
+
+- Any concerns about using this data to inform our research question?
+
+\vfill
+
+\newpage
+
+3. Posterior Inference 
+
+\vfill
+
+- Using classical inference, how would you estimate $\mu$.
+
+\vfill
+
+- *Using maximum likelihood, $\hat{\mu}_{MLE} = \bar{X}$ = `r round(mean(temp))`.*
+
+\vfill
+
+- *With Bayesian inference, our posterior belief is based on the data __and__ our prior belief. Note this can be a blessing or a curse.*
+
+\vfill
+
+- Formally, we have a distribution for the maximum temperature (a posterior distribution):
+$$p(\mu|x) = \int\frac{p(x|\mu,\sigma) \times p(\mu)p(\sigma)}{p(\mu)}d\sigma$$,
+note solving this is not trivial and isn't something we will handle in this class.
+
+\vfill
+
+- Luckily, there is an elegant computational procedure that will allow us to approximate $p(\mu|x)$ by taking samples from the distribution. *This is, of course, MCMC.*
+
+\vfill
+
+\newpage
+
+STAN code for this situation can be written as below. Note that the prior values are hard coded, these could also be passed in as arguments to the model. 
+
+\vfill
+
+```{stan, output.var="just_text", eval = F}
+data {
+  int<lower=0> N;
+  vector[N] y;
+}
+
+
+parameters {
+  real mu;
+  real<lower=0> sigma;
+}
+
+
+model {
+  y ~ normal(mu, sigma);
+  mu ~ normal(20, 10);
+}
+
+```
+
+\vfill
+
+```{r, results = F}
+temp_data <- stan("normal.stan", data=list(N = length(temp), y=temp))
+```
+
+\vfill
+
+```{r}
+print(temp_data)
+```
+
+\newpage
+
+```{r}
+plot(temp_data)
+```
+\vfill
+
+\newpage
+
+We can also view the posterior and prior beliefs together on a single figure.
+```{r}
+tibble(sims = c(extract(temp_data, pars = 'mu')$mu,rnorm(4000, 20, 10)), 
+       Distribution = rep(c('posterior','prior'), each = 4000)) %>% 
+  ggplot(aes(x = sims, color = Distribution)) + 
+  geom_density() + theme_bw() + 
+  xlab('Temperature (F)') + ylab('') + 
+  ggtitle("Prior and posterior belief for winter temperature in Bozeman")
+```
+
+
+
